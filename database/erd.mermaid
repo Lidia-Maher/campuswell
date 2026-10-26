@@ -1,0 +1,149 @@
+erDiagram
+    users ||--o{ mood_logs : "logs"
+    users ||--o{ tasks : "owns"
+    users ||--o{ pomodoro_sessions : "completes"
+    tasks |o--o{ pomodoro_sessions : "focused on"
+    users ||--o{ wellness_sessions : "completes"
+    wellness_content ||--o{ wellness_sessions : "used in"
+    users |o--o{ wellness_content : "creates (admin)"
+    users ||--o{ posts : "writes"
+    users |o--o{ posts : "reviews (admin)"
+    posts ||--o{ post_likes : "receives"
+    users ||--o{ post_likes : "gives"
+    posts ||--o{ post_reports : "receives"
+    users ||--o{ post_reports : "files"
+    users |o--o{ post_reports : "reviews (admin)"
+    users ||--o{ assessments : "takes"
+    assessments ||--|{ assessment_responses : "contains"
+    users ||--o{ reminders : "configures"
+    users ||--o{ user_suggestions : "receives"
+    suggestion_templates ||--o{ user_suggestions : "used in"
+
+    users {
+        int user_id PK
+        varchar firebase_uid UK
+        varchar email UK
+        varchar name
+        varchar role "student | admin | counsellor"
+        varchar department "computing | engineering | business"
+        boolean is_active
+        boolean onboarding_completed
+        timestamptz consent_accepted_at
+        timestamptz last_login_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    mood_logs {
+        int log_id PK
+        int user_id FK
+        smallint mood "1-5"
+        text note
+        boolean is_private
+        timestamptz logged_at
+    }
+    tasks {
+        int task_id PK
+        int user_id FK
+        varchar title
+        text description
+        varchar priority "low | medium | high"
+        varchar status "pending | in-progress | completed | cancelled"
+        date due_date
+        timestamptz completed_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    pomodoro_sessions {
+        int session_id PK
+        int user_id FK
+        int task_id FK "nullable"
+        smallint planned_minutes
+        smallint duration_minutes
+        varchar status "completed | cancelled"
+        timestamptz started_at
+        timestamptz completed_at
+    }
+    wellness_content {
+        int content_id PK
+        varchar category "meditation | breathing | sleep_sounds"
+        varchar title
+        text description
+        int duration_seconds
+        varchar media_url
+        varchar thumbnail_url
+        smallint inhale_seconds
+        smallint hold_seconds
+        smallint exhale_seconds
+        boolean is_active
+        int created_by FK
+        timestamptz created_at
+    }
+    wellness_sessions {
+        int session_id PK
+        int user_id FK
+        int content_id FK
+        int duration_seconds
+        boolean is_completed
+        timestamptz started_at
+        timestamptz ended_at
+    }
+    posts {
+        int post_id PK
+        int user_id FK
+        varchar content "max 500"
+        varchar status "pending | approved | rejected"
+        int reviewed_by FK
+        timestamptz reviewed_at
+        varchar rejection_reason
+        timestamptz created_at
+    }
+    post_likes {
+        int post_id PK, FK
+        int user_id PK, FK
+        timestamptz created_at
+    }
+    post_reports {
+        int report_id PK
+        int post_id FK
+        int reporter_id FK
+        varchar reason
+        varchar status "open | action_taken | dismissed"
+        int reviewed_by FK
+        timestamptz reviewed_at
+        timestamptz created_at
+    }
+    assessments {
+        int assessment_id PK
+        int user_id FK
+        varchar assessment_type "PHQ9 | GAD7"
+        timestamptz taken_at
+    }
+    assessment_responses {
+        int assessment_id PK, FK
+        smallint item_number PK
+        varchar assessment_type FK
+        smallint score "0-3"
+    }
+    reminders {
+        int reminder_id PK
+        int user_id FK
+        varchar reminder_type "mood_checkin | study | wellness"
+        time remind_at
+        boolean is_enabled
+        timestamptz updated_at
+    }
+    suggestion_templates {
+        int template_id PK
+        varchar category
+        varchar message
+        boolean is_active
+        timestamptz created_at
+    }
+    user_suggestions {
+        int suggestion_id PK
+        int user_id FK
+        int template_id FK
+        varchar model_version
+        boolean was_helpful
+        timestamptz shown_at
+    }
