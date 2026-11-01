@@ -1,22 +1,16 @@
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import Date, cast, func, select
+from fastapi import APIRouter, Depends, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
-from app.config import get_settings
 from app.database import get_db
 from app.models import MoodLog, User
 from app.schemas.mood import DailyMood, MoodCreate, MoodOut, MoodStats
+from app.utils import get_own_or_404, local_day, local_today
 
 router = APIRouter(prefix="/api/moods", tags=["mood tracker"])
-
-
-def _local_day(column):
-    """Calendar day in Amman time, so a 1 AM check-in counts for the right day."""
-    return cast(func.timezone(get_settings().timezone, column), Date)
 
 
 @router.post("", response_model=MoodOut, status_code=status.HTTP_201_CREATED)
@@ -42,9 +36,9 @@ def list_moods(
     """The user's own mood history, newest first. start/end are inclusive dates."""
     query = select(MoodLog).where(MoodLog.user_id == user.user_id)
     if start:
-        query = query.where(_local_day(MoodLog.logged_at) >= start)
+        query = query.where(local_day(MoodLog.logged_at) >= start)
     if end:
-        query = query.where(_local_day(MoodLog.logged_at) <= end)
+        query = query.where(local_day(MoodLog.logged_at) <= end)
     query = query.order_by(MoodLog.logged_at.desc()).limit(limit)
     return list(db.scalars(query))
 
@@ -53,10 +47,7 @@ def list_moods(
 def delete_mood(
     log_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Response:
-    log = db.get(MoodLog, log_id)
-    # 404 (not 403) for other users' logs, so ids of other people's data are not revealed
-    if log is None or log.user_id != user.user_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not_found")
+    log = get_own_or_404(db, MoodLog, log_id, user)
     db.delete(log)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -69,9 +60,9 @@ def mood_stats(
     db: Session = Depends(get_db),
 ) -> MoodStats:
     """FR-03 / FR-09: average mood, daily averages, 7-day moving average, streak, distribution."""
-    today = datetime.now(ZoneInfo(get_settings().timezone)).date()
+    today = local_today()
     since = today - timedelta(days=days - 1)
-    day = _local_day(MoodLog.logged_at)
+    day = local_day(MoodLog.logged_at)
     mine = (MoodLog.user_id == user.user_id, day >= since)
 
     daily_rows = db.execute(

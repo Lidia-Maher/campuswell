@@ -60,3 +60,19 @@ def register(client):
         return auth(name)
 
     return _register
+
+
+@pytest.fixture
+def register_staff(register):
+    """Registers a user and gives them the admin or counsellor role."""
+
+    def _register_staff(name: str, role: str = "admin") -> dict:
+        headers = register(name)
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE users SET role = :role WHERE firebase_uid = :uid"),
+                {"role": role, "uid": f"dev-{name}"},
+            )
+        return headers
+
+    return _register_staff

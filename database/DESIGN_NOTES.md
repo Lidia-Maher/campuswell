@@ -73,6 +73,9 @@ The GP1 schema (Report Table 4.19) had five tables: `users`, `mood_logs`, `tasks
 4. **AI tables.** `suggestion_templates` and `user_suggestions` support FR-11 (Optional). They can be left unused if the AI feature is dropped.
 5. **Minimum group size of 5** in the counsellor view – confirm the value with the supervisor.
 6. **SERIAL keys** are kept for consistency with the GP1 report; `GENERATED ... AS IDENTITY` is the newer PostgreSQL equivalent if preferred.
+7. **"Recommend counselling" cut-off.** Besides the PHQ-9 question 9 flag, the API returns `recommend_counselling` for results of 15 or more (PHQ-9 moderately severe / severe, GAD-7 severe). Some services use 10 (moderate). Set in `RECOMMEND_COUNSELLING` in `backend/app/schemas/assessment.py`; confirm with the supervisor.
+8. **Author names in the community feed.** The feed currently shows the author's name. If anonymous posting is chosen (decision 2), the API will hide it for anonymous posts.
+9. **Severity summary for counsellors.** Counsellors see how many students per department fall in each severity band (groups of 5 or more only). The number of PHQ-9 question 9 flags is deliberately *not* shown; confirm whether counsellors should see it.
 
 ## How to run
 

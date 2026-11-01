@@ -2,7 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import health, moods, users
+from app.routers import (
+    admin,
+    assessments,
+    community,
+    health,
+    moods,
+    reminders,
+    study,
+    suggestions,
+    users,
+    wellness,
+)
 
 settings = get_settings()
 
@@ -23,3 +34,10 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(users.router)
 app.include_router(moods.router)
+app.include_router(study.router)
+app.include_router(assessments.router)
+app.include_router(wellness.router)
+app.include_router(community.router)
+app.include_router(reminders.router)
+app.include_router(admin.router)
+app.include_router(suggestions.router)
