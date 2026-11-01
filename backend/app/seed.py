@@ -1,7 +1,8 @@
 """Fill the database with realistic demo data.
 
-    python -m app.seed            # only works on an empty database
-    python -m app.seed --reset    # erases ALL data first, then seeds
+    python -m app.seed                  # only works on an empty database
+    python -m app.seed --reset          # erases ALL data first, then seeds
+    python -m app.seed --content-only   # only the wellness library and tips (for production)
 
 Creates 24 students (8 per department), 1 admin and 1 counsellor, with 30 days of
 mood logs, tasks, Pomodoro and wellness sessions, community posts, assessments,
@@ -11,7 +12,7 @@ Every seeded user can be used in /docs with dev mode (AUTH_DEV_MODE=true):
     dev:sara        a student with a check-in every day (good for the mood charts)
     dev:admin       the administrator
     dev:counsellor  the counsellor
-Refuses to run when ENVIRONMENT=production.
+The demo data refuses to run when ENVIRONMENT=production; --content-only is allowed there.
 """
 
 import argparse
@@ -118,6 +119,46 @@ def mood_effect(day: date, today: date) -> float:
     return effect
 
 
+def wellness_library(created_by: int | None = None) -> list[WellnessContent]:
+    media = "https://media.campuswell.example"  # placeholder until real files are chosen
+    return [
+        WellnessContent(category="meditation", title="Body scan for sleep", duration_seconds=600,
+                        description="Relax each part of the body before bed.",
+                        media_url=f"{media}/meditation/body-scan.mp3", created_by=created_by),
+        WellnessContent(category="meditation", title="5-minute exam calm", duration_seconds=300,
+                        description="A short reset before an exam or presentation.",
+                        media_url=f"{media}/meditation/exam-calm.mp3", created_by=created_by),
+        WellnessContent(category="meditation", title="Mindful study break", duration_seconds=420,
+                        description="Clear your mind between study sessions.",
+                        media_url=f"{media}/meditation/study-break.mp3", created_by=created_by),
+        WellnessContent(category="breathing", title="Box breathing", duration_seconds=240,
+                        description="Inhale, hold, exhale and hold for 4 seconds each.",
+                        inhale_seconds=4, hold_seconds=4, exhale_seconds=4, created_by=created_by),
+        WellnessContent(category="breathing", title="4-7-8 relaxing breath", duration_seconds=180,
+                        description="A slow pattern that helps you wind down.",
+                        inhale_seconds=4, hold_seconds=7, exhale_seconds=8, created_by=created_by),
+        WellnessContent(category="breathing", title="Calm breathing", duration_seconds=300,
+                        description="Even, slow breaths with no hold.",
+                        inhale_seconds=5, hold_seconds=0, exhale_seconds=5, created_by=created_by),
+        WellnessContent(category="sleep_sounds", title="Rain on the window", duration_seconds=1800,
+                        media_url=f"{media}/sleep/rain.mp3", created_by=created_by),
+        WellnessContent(category="sleep_sounds", title="Ocean waves", duration_seconds=1800,
+                        media_url=f"{media}/sleep/ocean.mp3", created_by=created_by),
+    ]
+
+
+def seed_content(db: Session) -> dict[str, int]:
+    """Only the wellness library and the suggestion tips, no users. Safe for production and
+    safe to run again: items that already exist (same title / message) are skipped."""
+    titles = set(db.scalars(select(WellnessContent.title)))
+    messages = set(db.scalars(select(SuggestionTemplate.message)))
+    content = [c for c in wellness_library() if c.title not in titles]
+    templates = [SuggestionTemplate(category=c, message=m) for c, m in SUGGESTIONS if m not in messages]
+    db.add_all(content + templates)
+    db.commit()
+    return {"wellness_content": len(content), "suggestion_templates": len(templates)}
+
+
 def seed(db: Session) -> dict[str, int]:
     today = datetime.now(TZ).date()
     days = [today - timedelta(days=d) for d in range(DAYS - 1, -1, -1)]
@@ -146,31 +187,7 @@ def seed(db: Session) -> dict[str, int]:
     }
 
     # ---- wellness library ----
-    media = "https://media.campuswell.example"  # placeholder until real files are chosen
-    content = [
-        WellnessContent(category="meditation", title="Body scan for sleep", duration_seconds=600,
-                        description="Relax each part of the body before bed.",
-                        media_url=f"{media}/meditation/body-scan.mp3", created_by=admin.user_id),
-        WellnessContent(category="meditation", title="5-minute exam calm", duration_seconds=300,
-                        description="A short reset before an exam or presentation.",
-                        media_url=f"{media}/meditation/exam-calm.mp3", created_by=admin.user_id),
-        WellnessContent(category="meditation", title="Mindful study break", duration_seconds=420,
-                        description="Clear your mind between study sessions.",
-                        media_url=f"{media}/meditation/study-break.mp3", created_by=admin.user_id),
-        WellnessContent(category="breathing", title="Box breathing", duration_seconds=240,
-                        description="Inhale, hold, exhale and hold for 4 seconds each.",
-                        inhale_seconds=4, hold_seconds=4, exhale_seconds=4, created_by=admin.user_id),
-        WellnessContent(category="breathing", title="4-7-8 relaxing breath", duration_seconds=180,
-                        description="A slow pattern that helps you wind down.",
-                        inhale_seconds=4, hold_seconds=7, exhale_seconds=8, created_by=admin.user_id),
-        WellnessContent(category="breathing", title="Calm breathing", duration_seconds=300,
-                        description="Even, slow breaths with no hold.",
-                        inhale_seconds=5, hold_seconds=0, exhale_seconds=5, created_by=admin.user_id),
-        WellnessContent(category="sleep_sounds", title="Rain on the window", duration_seconds=1800,
-                        media_url=f"{media}/sleep/rain.mp3", created_by=admin.user_id),
-        WellnessContent(category="sleep_sounds", title="Ocean waves", duration_seconds=1800,
-                        media_url=f"{media}/sleep/ocean.mp3", created_by=admin.user_id),
-    ]
+    content = wellness_library(created_by=admin.user_id)
     db.add_all(content)
     db.flush()
 
@@ -311,7 +328,19 @@ def seed(db: Session) -> dict[str, int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fill the database with demo data")
     parser.add_argument("--reset", action="store_true", help="erase ALL existing data first")
+    parser.add_argument("--content-only", action="store_true",
+                        help="only add the wellness library and tips (no users; allowed in production)")
     args = parser.parse_args()
+
+    if args.content_only:
+        if args.reset:
+            sys.exit("--content-only cannot be combined with --reset")
+        with SessionLocal() as db:
+            counts = seed_content(db)
+        print("Added (existing items skipped):")
+        for table, count in counts.items():
+            print(f"  {table:<22}{count:>6}")
+        return
 
     if get_settings().environment == "production":
         sys.exit("Refusing to seed: ENVIRONMENT=production")

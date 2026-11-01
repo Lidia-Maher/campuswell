@@ -105,6 +105,16 @@ def test_delete_post(client, register, register_staff):
     assert client.get("/api/posts", headers=omar).json() == []
 
 
+def test_post_limit_per_day(client, register):
+    sara = register("sara")
+    for i in range(10):
+        assert client.post("/api/posts", json={"content": f"Post {i}"}, headers=sara).status_code == 201
+    r = client.post("/api/posts", json={"content": "One too many"}, headers=sara)
+    assert r.status_code == 429 and r.json()["detail"] == "post_limit_reached"
+    # the limit is per user
+    assert client.post("/api/posts", json={"content": "Hi"}, headers=register("omar")).status_code == 201
+
+
 def test_feed_paging(client, register, register_staff):
     sara, admin = register("sara"), register_staff("admin")
     ids = [_approved_post(client, sara, admin, f"Post {i}") for i in range(5)]

@@ -10,7 +10,7 @@ What is ready:
 - Endpoints for every feature: account, mood tracker, tasks + Pomodoro, PHQ-9 / GAD-7,
   wellness library, community + moderation, reminders, admin, counsellor reports and
   rule-based suggestions (full list at the end of this file).
-- 57 automated tests (`tests/`).
+- 67 automated tests (`tests/`), also run by GitHub on every push.
 
 ## 1. Run it on your computer
 
@@ -45,6 +45,9 @@ Open http://localhost:8000/docs to see and try every endpoint.
    - `200` → registered, continue to the dashboard.
    - `403 not_registered` → show the registration screen (name, department, consent checkbox), then `POST /api/me`.
    - `403 account_deactivated` → an admin deactivated the account.
+   - Registration (`POST /api/me`) needs a **verified** email ending in `std.psut.edu.jo` (students) or `psut.edu.jo` (staff); change the list with `ALLOWED_EMAIL_DOMAINS`. Otherwise:
+     - `403 email_not_verified` → call `user.sendEmailVerification()`, ask the user to click the link, then get a fresh token with `user.getIdToken(true)` and try again.
+     - `403 email_domain_not_allowed` → "Please use your university email."
 4. Deleting the account: `DELETE /api/me` removes all data, then the frontend calls Firebase `user.delete()`.
 
 ## 4. Changing the database (migrations)
@@ -89,6 +92,10 @@ TEST_DATABASE_URL=postgresql://user:pass@host/campuswell_test pytest
 # $env:TEST_DATABASE_URL="postgresql://..."; pytest
 ```
 
+GitHub also runs the tests on every push and pull request that changes `backend/`
+(`.github/workflows/backend-tests.yml`), with its own temporary database. A red ✗ next to
+a commit on GitHub means a test failed; click it to see which one.
+
 ## 6b. Demo data
 
 Fill your database with realistic test data (26 users, 30 days of moods, tasks,
@@ -113,6 +120,15 @@ New → Web Service → connect the GitHub repo, then:
 - Start command: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/health`
 - Environment variables: `ENVIRONMENT=production`, `DATABASE_URL`, `CORS_ORIGINS` (your Vercel URL), and `FIREBASE_CREDENTIALS_JSON` (the whole service account file pasted as one line).
+
+After the first deploy, open the service's **Shell** tab once and run:
+
+```bash
+python -m app.seed --content-only               # wellness library and tips, no fake users
+python -m app.make_admin someone@psut.edu.jo    # after that person has registered in the app
+```
+
+`make_admin` also takes `--role counsellor`. After the first admin exists, roles can be changed in the app (`PATCH /api/admin/users/{id}`).
 
 The free plan sleeps after inactivity, so open `/health` a minute before any demo.
 
@@ -172,7 +188,7 @@ gentler "talking to a counsellor could help" message.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/posts` | new post (waits for admin approval) |
+| POST | `/api/posts` | new post (waits for admin approval); `429 post_limit_reached` after 10 a day |
 | GET | `/api/posts` | approved feed, newest first, with likes; page with `?before_id=` |
 | GET | `/api/posts/mine` | your posts with status and rejection reason |
 | DELETE | `/api/posts/{id}` | delete your own post (admins: any post) |

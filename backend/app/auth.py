@@ -25,6 +25,8 @@ bearer_scheme = HTTPBearer(auto_error=False)
 class TokenClaims:
     uid: str
     email: str | None
+    email_verified: bool = False
+    is_dev: bool = False  # dev-mode token: skips the email checks
 
 
 @lru_cache
@@ -56,7 +58,8 @@ def get_token_claims(
     # Local testing only: "Bearer dev:<name>" (refused in production, see config.py)
     if get_settings().auth_dev_mode and token.startswith("dev:"):
         name = token[4:] or "student"
-        return TokenClaims(uid=f"dev-{name}", email=f"{name}@dev.campuswell.local")
+        return TokenClaims(uid=f"dev-{name}", email=f"{name}@dev.campuswell.local",
+                           email_verified=True, is_dev=True)
 
     try:
         decoded = firebase_auth.verify_id_token(token, app=_firebase_app())
@@ -64,7 +67,26 @@ def get_token_claims(
         raise _unauthorized("token_expired")
     except (firebase_auth.InvalidIdTokenError, ValueError):
         raise _unauthorized("invalid_token")
-    return TokenClaims(uid=decoded["uid"], email=decoded.get("email"))
+    return TokenClaims(
+        uid=decoded["uid"],
+        email=decoded.get("email"),
+        email_verified=bool(decoded.get("email_verified", False)),
+    )
+
+
+def check_email_allowed(claims: TokenClaims) -> None:
+    """Registration rule: a verified university email. Firebase lets anyone sign up with any
+    address, so without this check someone could register with an email they do not own."""
+    if claims.is_dev:
+        return
+    if not claims.email_verified:
+        # frontend: ask the user to click the link in the verification email, then call
+        # user.getIdToken(true) to get a fresh token and try again
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="email_not_verified")
+    allowed = get_settings().allowed_email_domain_list
+    domain = (claims.email or "").rsplit("@", 1)[-1].lower()
+    if allowed and domain not in allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="email_domain_not_allowed")
 
 
 def get_current_user(

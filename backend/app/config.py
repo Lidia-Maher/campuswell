@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     firebase_credentials_json: str | None = None
     auth_dev_mode: bool = False
     timezone: str = "Asia/Amman"
+    # who may register: students (std.psut.edu.jo) and staff (psut.edu.jo). Empty = anyone.
+    allowed_email_domains: str = "std.psut.edu.jo,psut.edu.jo"
 
     @property
     def sqlalchemy_url(self) -> str:
@@ -26,6 +28,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def allowed_email_domain_list(self) -> list[str]:
+        return [d.strip().lower() for d in self.allowed_email_domains.split(",") if d.strip()]
 
 
 @lru_cache

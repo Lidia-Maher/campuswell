@@ -19,8 +19,12 @@ from app.schemas.community import (
     ReportOut,
     ReportResolve,
 )
+from app.utils import local_day, local_today
 
 router = APIRouter(prefix="/api", tags=["community"])
+
+# stops one account from flooding the moderation queue
+MAX_POSTS_PER_DAY = 10
 
 like_count = (
     select(func.count()).where(PostLike.post_id == Post.post_id).correlate(Post).scalar_subquery()
@@ -45,7 +49,15 @@ def _approved_post_or_404(db: Session, post_id: int) -> Post:
 def create_post(
     body: PostCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> MyPostOut:
-    """FR-08: new posts wait for admin approval before they appear in the feed."""
+    """FR-08: new posts wait for admin approval before they appear in the feed.
+    429 'post_limit_reached' after 10 posts in one day (Amman time)."""
+    posted_today = db.scalar(
+        select(func.count()).where(
+            Post.user_id == user.user_id, local_day(Post.created_at) == local_today()
+        )
+    )
+    if posted_today >= MAX_POSTS_PER_DAY:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="post_limit_reached")
     post = Post(user_id=user.user_id, content=body.content)
     db.add(post)
     db.commit()

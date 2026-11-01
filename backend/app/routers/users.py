@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import TokenClaims, get_current_user, get_token_claims
+from app.auth import TokenClaims, check_email_allowed, get_current_user, get_token_claims
 from app.database import get_db
 from app.models import User
 from app.schemas.user import UserOut, UserRegister, UserUpdate
@@ -26,9 +26,11 @@ def register(
     claims: TokenClaims = Depends(get_token_claims),
     db: Session = Depends(get_db),
 ) -> User:
-    """First-time registration after Firebase login: name, department and consent."""
+    """First-time registration after Firebase login: name, department and consent.
+    The email must be verified and end in an allowed university domain."""
     if claims.email is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="email_required")
+    check_email_allowed(claims)
     if db.scalar(select(User).where(User.firebase_uid == claims.uid)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="already_registered")
     if db.scalar(select(User).where(User.email == claims.email)) is not None:
