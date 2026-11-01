@@ -5,7 +5,7 @@ Needed once on a fresh database, because only an admin can change roles in the A
     python -m app.make_admin someone@psut.edu.jo --role counsellor
 
 The person must have logged in to the app and registered first.
-On Render, run it from the service's Shell tab.
+For the deployed app, run it on a laptop with DATABASE_URL set to the production database.
 """
 
 import argparse

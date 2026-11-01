@@ -115,15 +115,24 @@ analytics and constraints in Neon's SQL Editor. The script refuses to run when
 
 New → Web Service → connect the GitHub repo, then:
 
+- Region: Frankfurt (same as the Neon database)
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/health`
-- Environment variables: `ENVIRONMENT=production`, `DATABASE_URL`, `CORS_ORIGINS` (your Vercel URL), and `FIREBASE_CREDENTIALS_JSON` (the whole service account file pasted as one line).
+- Environment variables:
+  - `ENVIRONMENT=production`
+  - `PYTHON_VERSION=3.12.10`
+  - `DATABASE_URL`: the Neon `production` branch, connection pooling off
+  - `CORS_ORIGINS`: the frontend address(es), comma-separated (e.g. `http://localhost:5173,https://campuswell.vercel.app`)
+  - `FIREBASE_CREDENTIALS_PATH=/etc/secrets/firebase-service-account.json`
+- Secret Files: add `firebase-service-account.json` and paste the key file's contents.
 
-After the first deploy, open the service's **Shell** tab once and run:
+Render's free plan has no Shell, so run the first-day commands from your laptop against the
+production database (PowerShell shown; the variable only lasts for that terminal window):
 
 ```bash
+$env:DATABASE_URL="<production connection string>"
 python -m app.seed --content-only               # wellness library and tips, no fake users
 python -m app.make_admin someone@psut.edu.jo    # after that person has registered in the app
 ```
