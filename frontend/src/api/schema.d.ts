@@ -55,6 +55,47 @@ export interface paths {
         patch: operations["update_me_api_me_patch"];
         trace?: never;
     };
+    "/api/me/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export My Data
+         * @description All of the user's data as JSON (GP1 Settings: "Export your data").
+         */
+        get: operations["export_my_data_api_me_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Erase My History
+         * @description Deletes the tracked history (moods, tasks, focus and wellness sessions, questionnaires,
+         *     tips shown) but keeps the account, community posts and reminder settings.
+         */
+        delete: operations["erase_my_history_api_me_data_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/moods": {
         parameters: {
             query?: never;
@@ -749,6 +790,23 @@ export interface paths {
         patch: operations["update_template_api_admin_suggestion_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Insights */
+        get: operations["insights_api_insights_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -941,6 +999,15 @@ export interface components {
             /** Is Active */
             is_active?: boolean | null;
         };
+        /** Correlation */
+        Correlation: {
+            /** R */
+            r: number | null;
+            /** Days Used */
+            days_used: number;
+            /** Strength */
+            strength: string;
+        };
         /** DailyMood */
         DailyMood: {
             /**
@@ -991,6 +1058,43 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** Insight */
+        Insight: {
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Message */
+            message: string;
+        };
+        /** InsightDay */
+        InsightDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Mood */
+            mood: number | null;
+            /** Focus Minutes */
+            focus_minutes: number;
+            /** Sessions Completed */
+            sessions_completed: number;
+            /** Tasks Completed */
+            tasks_completed: number;
+        };
+        /** Insights */
+        Insights: {
+            /** Days */
+            days: number;
+            /** Daily */
+            daily: components["schemas"]["InsightDay"][];
+            /** Weekdays */
+            weekdays: components["schemas"]["WeekdayPattern"][];
+            correlation: components["schemas"]["Correlation"];
+            /** Insights */
+            insights: components["schemas"]["Insight"][];
         };
         /** ModerationPostOut */
         ModerationPostOut: {
@@ -1525,6 +1629,17 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** WeekdayPattern */
+        WeekdayPattern: {
+            /** Weekday */
+            weekday: string;
+            /** Avg Mood */
+            avg_mood: number | null;
+            /** Avg Focus Minutes */
+            avg_focus_minutes: number;
+            /** Days */
+            days: number;
+        };
         /** WellnessStats */
         WellnessStats: {
             /** Days */
@@ -1672,6 +1787,46 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    export_my_data_api_me_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    erase_my_history_api_me_data_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3096,6 +3251,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    insights_api_insights_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Insights"];
                 };
             };
             /** @description Validation Error */

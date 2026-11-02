@@ -50,7 +50,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthCard title="Sign in" intro="Track your mood, plan your studies and look after yourself.">
+    <AuthCard title="Welcome back" intro="Sign in to access your dashboard and wellness tools.">
       {firebaseEnabled ? (
         <form className="stack" onSubmit={signIn} noValidate>
           {error && <Alert>{error}</Alert>}

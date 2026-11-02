@@ -7,6 +7,7 @@ from app.routers import (
     assessments,
     community,
     health,
+    insights,
     moods,
     reminders,
     study,
@@ -41,3 +42,4 @@ app.include_router(community.router)
 app.include_router(reminders.router)
 app.include_router(admin.router)
 app.include_router(suggestions.router)
+app.include_router(insights.router)

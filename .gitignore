@@ -1,3 +1,7 @@
 .DS_Store
 Thumbs.db
 .idea/
+
+# project reports may contain student names and IDs; keep them out of the code repo
+docs/*.docx
+docs/*.pdf

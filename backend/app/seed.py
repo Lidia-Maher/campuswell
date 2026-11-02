@@ -3,6 +3,7 @@
     python -m app.seed                  # only works on an empty database
     python -m app.seed --reset          # erases ALL data first, then seeds
     python -m app.seed --content-only   # only the wellness library and tips (for production)
+    python -m app.seed --refresh-dates  # move the demo data forward so it ends today (before a demo)
 
 Creates 24 students (8 per department), 1 admin and 1 counsellor, with 30 days of
 mood logs, tasks, Pomodoro and wellness sessions, community posts, assessments,
@@ -157,6 +158,65 @@ def seed_content(db: Session) -> dict[str, int]:
     db.add_all(content + templates)
     db.commit()
     return {"wellness_content": len(content), "suggestion_templates": len(templates)}
+
+
+# Every time column that belongs to a demo user's data: (table, owner column, time columns).
+# Columns listed together are shifted together, so "start <= end" checks stay true.
+DEMO_TIME_COLUMNS = [
+    ("users", "user_id", ["created_at", "consent_accepted_at", "last_login_at"]),
+    ("mood_logs", "user_id", ["logged_at"]),
+    ("tasks", "user_id", ["created_at", "completed_at", "due_date"]),
+    ("pomodoro_sessions", "user_id", ["started_at", "completed_at"]),
+    ("wellness_sessions", "user_id", ["started_at", "ended_at"]),
+    ("posts", "user_id", ["created_at", "reviewed_at"]),
+    ("post_likes", "user_id", ["created_at"]),
+    ("post_reports", "reporter_id", ["created_at", "reviewed_at"]),
+    ("assessments", "user_id", ["taken_at"]),
+    ("user_suggestions", "user_id", ["shown_at"]),
+]
+# (table, start column, end column): rows that would end in the future are moved back to now
+DEMO_INTERVALS = [
+    ("pomodoro_sessions", "started_at", "completed_at"),
+    ("wellness_sessions", "started_at", "ended_at"),
+]
+
+
+def refresh_demo_dates(db: Session) -> int:
+    """Moves all demo users' data forward so their newest mood check-in is today, as if the
+    demo had been seeded this morning. Real users' data is never touched. Returns the number
+    of days moved (0 if the data is already current)."""
+    demo = "SELECT user_id FROM users WHERE firebase_uid LIKE 'dev-%'"
+    latest = db.scalar(text(
+        f"SELECT MAX((logged_at AT TIME ZONE :tz)::date) FROM mood_logs WHERE user_id IN ({demo})"
+    ), {"tz": get_settings().timezone})
+    if latest is None:
+        return 0
+    days = (datetime.now(TZ).date() - latest).days
+    if days <= 0:
+        return 0
+
+    for table, owner, columns in DEMO_TIME_COLUMNS:
+        shifts = ", ".join(f"{c} = {c} + make_interval(days => :days)" for c in columns)
+        db.execute(text(f"UPDATE {table} SET {shifts} WHERE {owner} IN ({demo})"), {"days": days})
+    # moving whole days can put this evening's activity in the future: end it a minute ago
+    for table, start, end in DEMO_INTERVALS:
+        db.execute(text(
+            f"UPDATE {table} SET {start} = {start} - ({end} - now()) - interval '1 minute', "
+            f"{end} = now() - interval '1 minute' "
+            f"WHERE {end} > now() AND user_id IN ({demo})"
+        ))
+    for table, column in [("mood_logs", "logged_at"), ("assessments", "taken_at"),
+                          ("posts", "created_at"), ("user_suggestions", "shown_at")]:
+        db.execute(text(
+            f"UPDATE {table} SET {column} = now() - interval '1 minute' "
+            f"WHERE {column} > now() AND user_id IN ({demo})"
+        ))
+    db.execute(text(
+        f"UPDATE tasks SET completed_at = now() - interval '1 minute' "
+        f"WHERE completed_at > now() AND user_id IN ({demo})"
+    ))
+    db.commit()
+    return days
 
 
 def seed(db: Session) -> dict[str, int]:
@@ -330,7 +390,15 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true", help="erase ALL existing data first")
     parser.add_argument("--content-only", action="store_true",
                         help="only add the wellness library and tips (no users; allowed in production)")
+    parser.add_argument("--refresh-dates", action="store_true",
+                        help="move the demo users' data forward to today (allowed in production)")
     args = parser.parse_args()
+
+    if args.refresh_dates:
+        with SessionLocal() as db:
+            days = refresh_demo_dates(db)
+        print(f"Moved the demo data forward by {days} day(s)." if days else "The demo data is already current.")
+        return
 
     if args.content_only:
         if args.reset:

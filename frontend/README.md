@@ -51,8 +51,10 @@ const stats = useQuery({
   response. A typo in a path or field name is a red underline in VS Code.
 - `unwrap` returns the data or throws an `ApiError`; show it with `messageFor(error)`.
 - The login token is added automatically.
-- When the backend changes, regenerate the types: `npm run api:types` (live API) or
-  `npm run api:types:local` (your laptop's backend).
+- When the backend changes, regenerate the types. Most reliable (no server needed): in
+  `backend/` run `python -m app.openapi`, then here `npm run api:types:file`.
+  Alternatives: `npm run api:types` (live API) or `npm run api:types:local` (a running local
+  backend; restart it first if you changed backend code).
 
 ## 4. Adding a page
 

@@ -32,6 +32,10 @@ describe("redirectFor", () => {
     expect(redirectFor(ready("counsellor"), "/admin")).toBe("/counsellor");
     // "/administration" is not the admin area
     expect(redirectFor(ready("admin"), "/administration")).toBe("/admin");
+    // settings is shared by every role
+    expect(redirectFor(ready("admin"), "/settings")).toBeNull();
+    expect(redirectFor(ready("counsellor"), "/settings")).toBeNull();
+    expect(redirectFor(ready("student"), "/settings")).toBeNull();
   });
 
   it("moves signed-in users away from the sign-in screens", () => {

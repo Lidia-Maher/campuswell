@@ -15,6 +15,8 @@ export type Session =
 
 export const PUBLIC_PATHS = ["/login", "/signup"];
 const STATUS_PATHS = ["/verify-email", "/register", "/deactivated"];
+// pages every signed-in role may open
+const SHARED_PATHS = ["/settings"];
 
 // Students and staff can register; the backend has the final say (ALLOWED_EMAIL_DOMAINS)
 export const STUDENT_DOMAIN = "std.psut.edu.jo";
@@ -54,6 +56,7 @@ export function redirectFor(session: Session, path: string): string | null {
     case "ready": {
       const home = homePath(session.user.role);
       if (PUBLIC_PATHS.includes(path) || STATUS_PATHS.includes(path)) return home;
+      if (SHARED_PATHS.includes(path)) return null;
       return areaOf(path) === session.user.role ? null : home;
     }
   }

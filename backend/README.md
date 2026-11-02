@@ -10,7 +10,7 @@ What is ready:
 - Endpoints for every feature: account, mood tracker, tasks + Pomodoro, PHQ-9 / GAD-7,
   wellness library, community + moderation, reminders, admin, counsellor reports and
   rule-based suggestions (full list at the end of this file).
-- 67 automated tests (`tests/`), also run by GitHub on every push.
+- 75 automated tests (`tests/`), also run by GitHub on every push.
 
 ## 1. Run it on your computer
 
@@ -105,6 +105,14 @@ focus sessions, posts, assessments and more):
 python -m app.seed --reset     # --reset erases ALL existing data first
 ```
 
+The demo data is dated relative to the day it was seeded, so after a week the "last 7 days"
+views look empty. Before a demo, move it forward so it ends today (only demo `dev-…`
+users are touched, never real ones; allowed on the live database):
+
+```bash
+python -m app.seed --refresh-dates
+```
+
 Then, with `AUTH_DEV_MODE=true`, log in at /docs as `dev:sara` (a student with a check-in
 every day), `dev:admin` or `dev:counsellor`. Every seeded student works the same way,
 for example `dev:omar`. The queries in `database/demo_queries.sql` show the views,
@@ -154,6 +162,9 @@ All `/api` endpoints need a token. "Admin" and "counsellor" mean the endpoint re
 | POST | `/api/me` | register after first Firebase login |
 | PATCH | `/api/me` | update name, department, onboarding flag |
 | DELETE | `/api/me` | delete account and all data |
+| GET | `/api/me/export` | all of your data as JSON |
+| DELETE | `/api/me/data` | erase tracked history (moods, tasks, sessions, questionnaires); keeps the account, posts and reminders |
+| GET | `/api/insights?days=30` | analytics: daily mood + focus, weekday patterns, Pearson correlation (study time vs mood), insight messages |
 | POST | `/api/moods` | log a mood (1–5), optional note and privacy flag |
 | GET | `/api/moods` | mood history, optional `start` / `end` dates |
 | DELETE | `/api/moods/{log_id}` | delete one of your own logs |
