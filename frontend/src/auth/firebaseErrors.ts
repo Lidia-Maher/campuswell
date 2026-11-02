@@ -7,6 +7,7 @@ const FIREBASE_MESSAGES: Record<string, string> = {
   "auth/weak-password": "Use at least 8 characters for your password.",
   "auth/too-many-requests": "Too many attempts. Wait a few minutes and try again.",
   "auth/network-request-failed": "Can't reach the sign-in service. Check your connection.",
+  "auth/operation-not-allowed": "Email sign-in is switched off. An admin must enable Email/Password in Firebase.",
 };
 
 export function firebaseMessage(error: unknown): string {
