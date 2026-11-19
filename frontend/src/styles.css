@@ -172,7 +172,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; backgr
 .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; color: var(--ink); cursor: pointer; }
 .check input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--primary); }
 
-.switch { position: relative; width: 44px; height: 24px; flex: none; }
+.switch { position: relative; display: inline-block; vertical-align: middle; width: 44px; height: 24px; flex: none; }
 .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
 .switch span { position: absolute; inset: 0; background: #d5dbe3; border-radius: 999px; transition: background 0.15s; }
 .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: transform 0.15s; box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); }
