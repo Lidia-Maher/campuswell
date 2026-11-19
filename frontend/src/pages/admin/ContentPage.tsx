@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { api, type Schemas, unwrap } from "../../api/client";
-import { messageFor } from "../../api/errors";
-import { Alert, Button, Card, ErrorAlert, Field, Loading, Switch, TextArea } from "../../components/ui";
+import { ApiError, messageFor } from "../../api/errors";
+import { Alert, Button, Card, ConfirmDialog, ErrorAlert, Field, Loading, Switch, TextArea } from "../../components/ui";
 import { MEDITATION_NAMES } from "../../lib/meditations";
 import { builtinName, builtinUrl, SOUNDS } from "../../lib/soundscapes";
 
+type Content = Schemas["ContentOut"];
 type Category = Schemas["ContentCreate"]["category"];
 const CATEGORY_LABEL: Record<Category, string> = { meditation: "Meditation", breathing: "Breathing", sleep_sounds: "Sleep sounds" };
 
@@ -21,39 +22,47 @@ function audioLabel(url: string | null | undefined) {
   return url?.includes("campuswell.example") ? null : "Audio linked";
 }
 
-function AddContent({ onDone }: { onDone: () => void }) {
+/** Adds new content, or edits `item` when one is given. */
+function ContentForm({ item, onDone }: { item?: Content; onDone: () => void }) {
   const qc = useQueryClient();
-  const [category, setCategory] = useState<Category>("meditation");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [minutes, setMinutes] = useState("5");
-  const [mediaUrl, setMediaUrl] = useState("");
-  const [source, setSource] = useState(Object.keys(BUILTIN.meditation)[0]);
-  const [pattern, setPattern] = useState({ inhale: "4", hold: "4", exhale: "4" });
+  const initialCategory = (item?.category as Category | undefined) ?? "meditation";
+  const initialBuiltin = builtinName(item?.media_url);
+  const [category, setCategory] = useState<Category>(initialCategory);
+  const [title, setTitle] = useState(item?.title ?? "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [minutes, setMinutes] = useState(String(item ? Math.round(item.duration_seconds / 60) : 5));
+  const [mediaUrl, setMediaUrl] = useState(item && !initialBuiltin ? item.media_url ?? "" : "");
+  const [source, setSource] = useState(
+    item ? initialBuiltin ?? LINK : Object.keys(BUILTIN[initialCategory])[0] ?? LINK,
+  );
+  const [pattern, setPattern] = useState({
+    inhale: String(item?.inhale_seconds ?? 4), hold: String(item?.hold_seconds ?? 4), exhale: String(item?.exhale_seconds ?? 4),
+  });
   const breathing = category === "breathing";
 
   function changeCategory(next: Category) {
     setCategory(next);
     setSource(Object.keys(BUILTIN[next])[0] ?? LINK);
   }
-  const create = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/wellness/content", {
-      body: {
-        category, title: title.trim(), description: description.trim() || null,
-        duration_seconds: Math.round(Number(minutes) * 60),
-        media_url: breathing ? null : source === LINK ? mediaUrl.trim() : builtinUrl(source),
-        inhale_seconds: breathing ? Number(pattern.inhale) : null,
-        hold_seconds: breathing ? Number(pattern.hold) : null,
-        exhale_seconds: breathing ? Number(pattern.exhale) : null,
-        is_active: true,
-      },
-    })),
+
+  const body = {
+    category, title: title.trim(), description: description.trim() || null,
+    duration_seconds: Math.round(Number(minutes) * 60),
+    media_url: breathing ? null : source === LINK ? mediaUrl.trim() : builtinUrl(source),
+    inhale_seconds: breathing ? Number(pattern.inhale) : null,
+    hold_seconds: breathing ? Number(pattern.hold) : null,
+    exhale_seconds: breathing ? Number(pattern.exhale) : null,
+  };
+  const save = useMutation({
+    mutationFn: () => item
+      ? unwrap(api.PATCH("/api/wellness/content/{content_id}", { params: { path: { content_id: item.content_id } }, body }))
+      : unwrap(api.POST("/api/wellness/content", { body: { ...body, is_active: true } })),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["wellness"] }); onDone(); },
   });
 
   return (
-    <Card title="Add wellness content">
-      <form className="stack" onSubmit={(e: FormEvent) => { e.preventDefault(); create.mutate(); }}>
+    <Card title={item ? `Edit "${item.title}"` : "Add wellness content"}>
+      <form className="stack" onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate(); }}>
         <div className="grid grid-half" style={{ gap: 14 }}>
           <div className="field">
             <label htmlFor="c-category">Category</label>
@@ -84,10 +93,10 @@ function AddContent({ onDone }: { onDone: () => void }) {
           )}
         </div>
         <TextArea id="c-desc" label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-        {create.isError && <Alert>{messageFor(create.error)}</Alert>}
+        {save.isError && <Alert>{messageFor(save.error)}</Alert>}
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <Button variant="secondary" onClick={onDone}>Cancel</Button>
-          <Button type="submit" busy={create.isPending} disabled={!title.trim()}>Add</Button>
+          <Button type="submit" busy={save.isPending} disabled={!title.trim()}>{item ? "Save changes" : "Add"}</Button>
         </div>
       </form>
     </Card>
@@ -96,7 +105,8 @@ function AddContent({ onDone }: { onDone: () => void }) {
 
 export function ContentPage() {
   const qc = useQueryClient();
-  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Content | "new" | null>(null);
+  const [deleting, setDeleting] = useState<Content | null>(null);
   const content = useQuery({
     queryKey: ["wellness", "content", "all"],
     queryFn: () => unwrap(api.GET("/api/wellness/content", { params: { query: { include_inactive: true } } })),
@@ -106,19 +116,39 @@ export function ContentPage() {
       unwrap(api.PATCH("/api/wellness/content/{content_id}", { params: { path: { content_id: id } }, body: { is_active: active } })),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["wellness"] }),
   });
+  const remove = useMutation({
+    mutationFn: (id: number) => unwrap(api.DELETE("/api/wellness/content/{content_id}", { params: { path: { content_id: id } } })),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["wellness"] }); setDeleting(null); },
+  });
+  const inUse = remove.error instanceof ApiError && remove.error.code === "content_in_use";
+
+  function openEditor(target: Content | "new") {
+    setEditing(target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function closeDelete() {
+    setDeleting(null);
+    remove.reset();
+  }
 
   return (
     <div className="stack-lg">
       <div className="row spread">
         <p className="muted">Items students see in the Well-Being library. Hidden items stay in students' history.</p>
-        {!adding && <Button icon={Plus} onClick={() => setAdding(true)}>Add content</Button>}
+        {!editing && <Button icon={Plus} onClick={() => openEditor("new")}>Add content</Button>}
       </div>
-      {adding && <AddContent onDone={() => setAdding(false)} />}
+      {editing && (
+        <ContentForm key={editing === "new" ? "new" : editing.content_id}
+                     item={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />
+      )}
       {toggle.isError && <Alert>{messageFor(toggle.error)}</Alert>}
       {content.isPending ? <Loading /> : content.isError ? <ErrorAlert error={content.error} /> : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Title</th><th>Category</th><th className="num">Length</th><th>Audio / pattern</th><th>Visible</th></tr></thead>
+            <thead>
+              <tr><th>Title</th><th>Category</th><th className="num">Length</th><th>Audio / pattern</th><th>Visible</th><th><span className="sr-only">Actions</span></th></tr>
+            </thead>
             <tbody>
               {content.data.map((c) => (
                 <tr key={c.content_id}>
@@ -133,12 +163,44 @@ export function ContentPage() {
                     <Switch id={`active-${c.content_id}`} label={`Show ${c.title} to students`} checked={c.is_active}
                             disabled={toggle.isPending} onChange={(on) => toggle.mutate({ id: c.content_id, active: on })} />
                   </td>
+                  <td>
+                    <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+                      <button type="button" className="icon-btn" onClick={() => openEditor(c)} aria-label={`Edit ${c.title}`} title="Edit">
+                        <Pencil size={17} />
+                      </button>
+                      <button type="button" className="icon-btn" onClick={() => setDeleting(c)} aria-label={`Delete ${c.title}`} title="Delete"
+                              style={{ color: "var(--danger)" }}>
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <ConfirmDialog open={deleting !== null} title={`Delete "${deleting?.title ?? ""}"?`}
+                     confirmLabel={inUse ? "Hide it instead" : "Delete"} danger={!inUse} busy={remove.isPending || toggle.isPending}
+                     onCancel={closeDelete}
+                     onConfirm={() => {
+                       if (!deleting) return;
+                       if (inUse) toggle.mutate({ id: deleting.content_id, active: false }, { onSuccess: closeDelete });
+                       else remove.mutate(deleting.content_id);
+                     }}>
+        {inUse ? (
+          <Alert kind="warning">
+            Students have already used this item, so deleting it would erase their history. Hide it instead: students
+            won't see it in the library, but their past sessions stay.
+          </Alert>
+        ) : (
+          <>
+            <p>This removes it from the library for good. To take it away only for now, switch off Visible instead.</p>
+            {remove.isError && <Alert>{messageFor(remove.error)}</Alert>}
+          </>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

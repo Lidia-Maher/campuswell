@@ -56,6 +56,7 @@ const MESSAGES: Record<string, string> = {
   cannot_change_own_account: "You can't change your own account here.",
   student_needs_department: "Students must have a school.",
   no_suggestions_available: "No tips available yet.",
+  content_in_use: "Students have already used this item. Hide it instead of deleting it.",
 };
 
 export function messageFor(error: unknown): string {

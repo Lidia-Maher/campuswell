@@ -325,12 +325,17 @@ export interface paths {
         get: operations["get_content_api_wellness_content__content_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Content
+         * @description Only content no student has used yet (e.g. added by mistake). Used content would take
+         *     students' session history with it, so it is refused with content_in_use: hide it instead.
+         */
+        delete: operations["delete_content_api_wellness_content__content_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Content
-         * @description Content is never deleted (past sessions refer to it); deactivate it instead.
+         * @description Set is_active: false to hide content from students but keep it in their history.
          */
         patch: operations["update_content_api_wellness_content__content_id__patch"];
         trace?: never;
@@ -975,7 +980,7 @@ export interface components {
         };
         /**
          * ContentUpdate
-         * @description Only the fields sent are changed. Set is_active: false to hide content (it is never deleted).
+         * @description Only the fields sent are changed. Set is_active: false to hide content from students.
          */
         ContentUpdate: {
             /** Category */
@@ -2395,6 +2400,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ContentOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_content_api_wellness_content__content_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

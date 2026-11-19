@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -83,7 +83,7 @@ def update_content(
     admin: User = Depends(require_role("admin")),
     db: Session = Depends(get_db),
 ) -> WellnessContent:
-    """Content is never deleted (past sessions refer to it); deactivate it instead."""
+    """Set is_active: false to hide content from students but keep it in their history."""
     content = _content_or_404(db, content_id, admin)
     current = ContentOut.model_validate(content).model_dump(exclude={"content_id"})
     merged = {**current, **body.model_dump(exclude_unset=True)}
@@ -96,6 +96,23 @@ def update_content(
     db.commit()
     db.refresh(content)
     return content
+
+
+@router.delete("/content/{content_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_content(
+    content_id: int,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Only content no student has used yet (e.g. added by mistake). Used content would take
+    students' session history with it, so it is refused with content_in_use: hide it instead."""
+    content = _content_or_404(db, content_id, admin)
+    used = db.scalar(select(func.count()).where(WellnessSession.content_id == content_id))
+    if used:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="content_in_use")
+    db.delete(content)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED)

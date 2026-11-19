@@ -35,7 +35,7 @@ class ContentCreate(BaseModel):
 
 
 class ContentUpdate(BaseModel):
-    """Only the fields sent are changed. Set is_active: false to hide content (it is never deleted)."""
+    """Only the fields sent are changed. Set is_active: false to hide content from students."""
 
     category: Category | None = None
     title: str | None = Field(default=None, min_length=1, max_length=150)

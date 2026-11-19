@@ -72,6 +72,23 @@ def test_sessions_and_stats(client, register, register_staff):
     assert {c["category"]: c["minutes"] for c in stats["by_category"]} == {"breathing": 4.0, "meditation": 5.0}
 
 
+def test_delete_only_unused_content(client, register, register_staff):
+    sara, admin = register("sara"), register_staff("admin")
+    unused = client.post("/api/wellness/content", json=BODY_SCAN, headers=admin).json()["content_id"]
+    used = client.post("/api/wellness/content", json=BOX_BREATHING, headers=admin).json()["content_id"]
+    client.post("/api/wellness/sessions", json={"content_id": used, "duration_seconds": 240,
+                                                "started_at": _started()}, headers=sara)
+
+    assert client.delete(f"/api/wellness/content/{unused}", headers=sara).status_code == 403
+    assert client.delete(f"/api/wellness/content/{unused}", headers=admin).status_code == 204
+    assert client.get(f"/api/wellness/content/{unused}", headers=admin).status_code == 404
+
+    # used content would take Sara's history with it: refused, and her history is intact
+    r = client.delete(f"/api/wellness/content/{used}", headers=admin)
+    assert r.status_code == 409 and r.json()["detail"] == "content_in_use"
+    assert len(client.get("/api/wellness/sessions", headers=sara).json()) == 1
+
+
 def test_session_validation(client, register, register_staff):
     sara, admin = register("sara"), register_staff("admin")
     content_id = client.post("/api/wellness/content", json=BOX_BREATHING, headers=admin).json()["content_id"]
