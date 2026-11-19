@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Headphones, MapPin, Moon, Play, Square, Wind, X } from "lucide-react";
+import { Clock, Headphones, MapPin, Moon, Pause, Play, Square, Volume2, Wind, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { api, type Schemas, unwrap } from "../../api/client";
 import { messageFor } from "../../api/errors";
 import { SupportPanel } from "../../components/SupportPanel";
-import { Alert, Button, Card, Empty, ErrorAlert, Loading, Tabs } from "../../components/ui";
+import { Alert, Button, Card, Empty, ErrorAlert, Loading, Switch, Tabs } from "../../components/ui";
+import { canSpeak, MEDITATIONS, speak, type Step, stopSpeaking } from "../../lib/meditations";
+import { audioContext, builtinName, chime, isSound, type SoundHandle, type SoundName, startSound } from "../../lib/soundscapes";
 
 type Content = Schemas["ContentOut"];
 type Tab = "meditation" | "breathing" | "sleep_sounds" | "resources";
@@ -17,6 +19,7 @@ const CATEGORY = {
 } as const;
 
 const minutes = (seconds: number) => `${Math.round(seconds / 60)} min`;
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
 function useLogSession() {
   const qc = useQueryClient();
@@ -57,12 +60,19 @@ function BreathingGuide({ item }: { item: Content }) {
   const rec = useSessionRecorder(item);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [cues, setCues] = useState(true);
 
   const elapsed = startMs ? Math.min(item.duration_seconds, (now - startMs) / 1000) : 0;
   const running = startMs !== null && elapsed < item.duration_seconds;
   let t = elapsed % cycle;
   const phase = phases.find((p) => (t -= p.seconds) < 0) ?? phases[0];
   const phaseLeft = Math.ceil(-t);
+
+  // a soft tone when each breath starts: higher to breathe in, lower to breathe out
+  const cue = running ? `${Math.floor(elapsed / cycle)}-${phases.indexOf(phase)}` : "";
+  useEffect(() => {
+    if (cue && cues && phase.name !== "Hold") chime(phase.name === "Breathe in" ? 396 : 264, 1.8, 0.15);
+  }, [cue]); // only when the breath changes, not when the switch is flipped
 
   useEffect(() => {
     if (!startMs) return;
@@ -96,13 +106,217 @@ function BreathingGuide({ item }: { item: Content }) {
       </p>
       {running
         ? <Button variant="secondary" icon={Square} onClick={() => { rec.finish(elapsed, false); setStartMs(null); }}>Stop</Button>
-        : <Button icon={Play} onClick={() => { rec.start(); setNow(Date.now()); setStartMs(Date.now()); }}>Start</Button>}
+        : <Button icon={Play} onClick={() => { if (cues) audioContext(); rec.start(); setNow(Date.now()); setStartMs(Date.now()); }}>Start</Button>}
+      <label className="row small muted" htmlFor={`cues-${item.content_id}`} style={{ gap: 8 }}>
+        <Switch id={`cues-${item.content_id}`} label="Sound cues" checked={cues} onChange={setCues} /> Sound cues
+      </label>
       {rec.log.isSuccess && <Alert kind="success">Session saved.</Alert>}
       {rec.log.isError && <Alert>{messageFor(rec.log.error)}</Alert>}
     </div>
   );
 }
 
+/** Keeps the latest `finish` so cleanup on close can still save the session. */
+function useFinishOnClose(rec: ReturnType<typeof useSessionRecorder>, seconds: () => number, cleanup?: () => void) {
+  const latest = useRef({ rec, seconds, cleanup });
+  latest.current = { rec, seconds, cleanup };
+  useEffect(() => () => {
+    latest.current.cleanup?.();
+    latest.current.rec.finish(latest.current.seconds(), false);
+  }, []);
+  return latest;
+}
+
+const SLEEP_TIMERS = [15, 30, 45, 60];
+
+/** Sleep sounds made in the browser (lib/soundscapes), with a volume control and a sleep timer. */
+function SoundPlayer({ item, name }: { item: Content; name: SoundName }) {
+  const rec = useSessionRecorder(item);
+  const sound = useRef<SoundHandle | null>(null);
+  const listened = useRef(0);
+  const [seconds, setSeconds] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.6);
+  const [timer, setTimer] = useState(Math.round(item.duration_seconds / 60));
+  const latest = useFinishOnClose(rec, () => listened.current, () => sound.current?.stop(0.5));
+  const length = timer * 60;
+  const finished = !playing && seconds >= length;
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => {
+      listened.current += 1;
+      setSeconds(listened.current);
+      if (listened.current >= length) {
+        sound.current?.stop(8); // fade out slowly at the end of the timer
+        sound.current = null;
+        setPlaying(false);
+        latest.current.rec.finish(listened.current, true);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [playing, length, latest]);
+
+  function play() {
+    if (listened.current >= length) { listened.current = 0; setSeconds(0); }
+    rec.start();
+    sound.current = startSound(name, volume);
+    setPlaying(true);
+  }
+
+  function pause() {
+    sound.current?.stop();
+    sound.current = null;
+    setPlaying(false);
+  }
+
+  return (
+    <div className="stack" style={{ alignItems: "center" }}>
+      <div className={`sound-orb ${playing ? "playing" : ""}`} aria-hidden><Moon size={44} /></div>
+      <p aria-live="polite" style={{ fontSize: "1.3rem", fontWeight: 700, color: "#111827" }}>
+        {playing ? `${clock(length - seconds)} left` : finished ? "Sleep well" : seconds > 0 ? "Paused" : "Ready when you are"}
+      </p>
+      {playing
+        ? <Button variant="secondary" icon={Pause} onClick={pause}>Pause</Button>
+        : <Button icon={Play} onClick={play}>{seconds > 0 && !finished ? "Resume" : "Play"}</Button>}
+      <div className="row wrap" style={{ justifyContent: "center", gap: 20 }}>
+        <label className="row small muted" htmlFor={`volume-${item.content_id}`} style={{ gap: 8 }}>
+          <Volume2 size={18} aria-hidden /> Volume
+          <input id={`volume-${item.content_id}`} type="range" min={0} max={1} step={0.05} value={volume}
+                 onChange={(e) => { const v = Number(e.target.value); setVolume(v); sound.current?.setVolume(v); }} />
+        </label>
+        <label className="row small muted" htmlFor={`timer-${item.content_id}`} style={{ gap: 8 }}>
+          <Clock size={18} aria-hidden /> Stop after
+          <select id={`timer-${item.content_id}`} className="input" style={{ width: "auto" }} value={timer}
+                  onChange={(e) => setTimer(Number(e.target.value))}>
+            {[...new Set([...SLEEP_TIMERS, Math.round(item.duration_seconds / 60)])].sort((a, b) => a - b)
+              .map((m) => <option key={m} value={m}>{m} min</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="small muted">The sound fades out gently when the timer ends.</p>
+      {rec.log.isSuccess && <Alert kind="success">Session saved.</Alert>}
+      {rec.log.isError && <Alert>{messageFor(rec.log.error)}</Alert>}
+    </div>
+  );
+}
+
+type Background = "none" | "rain" | "ocean";
+
+/** A meditation guided by timed steps on screen, read aloud when the browser supports it. */
+function GuidedMeditation({ item, steps }: { item: Content; steps: Step[] }) {
+  const rec = useSessionRecorder(item);
+  const total = item.duration_seconds;
+  const elapsedRef = useRef(0);
+  const spoken = useRef(-1);
+  const backgroundSound = useRef<SoundHandle | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [voice, setVoice] = useState(canSpeak);
+  const [background, setBackground] = useState<Background>("none");
+  const latest = useFinishOnClose(rec, () => elapsedRef.current, () => { stopSpeaking(); backgroundSound.current?.stop(0.5); });
+
+  const index = steps.reduce((found, s, i) => (s.at <= elapsed ? i : found), 0);
+  const done = elapsed >= total;
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      elapsedRef.current = Math.min(total, elapsedRef.current + 0.5);
+      setElapsed(elapsedRef.current);
+    }, 500);
+    return () => clearInterval(id);
+  }, [running, total]);
+
+  // read each step aloud once, when it is reached
+  useEffect(() => {
+    if (running && voice && spoken.current !== index) speak(steps[index].text);
+    if (running) spoken.current = index;
+  }, [running, voice, index, steps]);
+
+  useEffect(() => {
+    if (!running || !done) return;
+    setRunning(false);
+    backgroundSound.current?.stop(6);
+    backgroundSound.current = null;
+    chime();
+    latest.current.rec.finish(total, true);
+  }, [running, done, total, latest]);
+
+  function start() {
+    audioContext();
+    if (elapsedRef.current === 0 || done) {
+      elapsedRef.current = 0;
+      setElapsed(0);
+      spoken.current = -1;
+      chime();
+      rec.start();
+    }
+    if (background !== "none") backgroundSound.current = startSound(background, 0.25);
+    setRunning(true);
+  }
+
+  function pause() {
+    setRunning(false);
+    stopSpeaking();
+    backgroundSound.current?.stop();
+    backgroundSound.current = null;
+  }
+
+  function stop() {
+    pause();
+    rec.finish(elapsedRef.current, false);
+    elapsedRef.current = 0;
+    setElapsed(0);
+    spoken.current = -1;
+  }
+
+  const started = elapsed > 0 && !done;
+  return (
+    <div className="stack">
+      <div className="meditation-step" aria-live="polite">
+        <p className="eyebrow">{done ? "Finished" : started ? `Step ${index + 1} of ${steps.length}` : "Before you start"}</p>
+        <p className="meditation-text">
+          {done ? "Well done. Take a moment before you get up." : started ? steps[index].text
+            : "Find a quiet place. Use headphones if you can, and turn your volume up to hear the guide."}
+        </p>
+      </div>
+      <div className="progress" role="progressbar" aria-label="Meditation progress" aria-valuemin={0} aria-valuemax={total}
+           aria-valuenow={Math.round(elapsed)}>
+        <span style={{ width: `${(elapsed / total) * 100}%` }} />
+      </div>
+      <p className="small muted num">{clock(elapsed)} / {clock(total)}</p>
+      <div className="row wrap" style={{ gap: 12 }}>
+        {running
+          ? <Button variant="secondary" icon={Pause} onClick={pause}>Pause</Button>
+          : <Button icon={Play} onClick={start}>{started ? "Resume" : done ? "Start again" : "Start"}</Button>}
+        {started && <Button variant="secondary" icon={Square} onClick={stop}>Stop</Button>}
+      </div>
+      <div className="row wrap" style={{ gap: 20 }}>
+        {canSpeak && (
+          <label className="row small muted" htmlFor={`voice-${item.content_id}`} style={{ gap: 8 }}>
+            <Switch id={`voice-${item.content_id}`} label="Read aloud" checked={voice}
+                    onChange={(on) => { setVoice(on); if (!on) stopSpeaking(); }} /> Read aloud
+          </label>
+        )}
+        <label className="row small muted" htmlFor={`bg-${item.content_id}`} style={{ gap: 8 }}>
+          Background
+          <select id={`bg-${item.content_id}`} className="input" style={{ width: "auto" }} value={background}
+                  disabled={running} onChange={(e) => setBackground(e.target.value as Background)}>
+            <option value="none">None</option>
+            <option value="rain">Rain</option>
+            <option value="ocean">Ocean waves</option>
+          </select>
+        </label>
+      </div>
+      {!canSpeak && <p className="small muted">Your browser can't read the steps aloud, so follow them on screen.</p>}
+      {rec.log.isSuccess && <Alert kind="success">Session saved.</Alert>}
+      {rec.log.isError && <Alert>{messageFor(rec.log.error)}</Alert>}
+    </div>
+  );
+}
+
+/** A real audio file (a link an admin added). */
 function AudioSession({ item }: { item: Content }) {
   const rec = useSessionRecorder(item);
   const listened = useRef(0);
@@ -110,9 +324,7 @@ function AudioSession({ item }: { item: Content }) {
   const [failed, setFailed] = useState(false);
 
   // when the player is closed or switched, save what was listened to
-  const finishRef = useRef(rec.finish);
-  finishRef.current = rec.finish;
-  useEffect(() => () => finishRef.current(listened.current, false), []);
+  useFinishOnClose(rec, () => listened.current);
 
   return (
     <div className="stack">
@@ -141,9 +353,17 @@ function Player({ item, onClose }: { item: Content; onClose: () => void }) {
           subtitle={`${cat.label} · ${minutes(item.duration_seconds)}`}
           action={<button type="button" className="icon-btn" onClick={onClose} aria-label="Close player"><X size={20} /></button>}>
       {item.description && <p className="muted" style={{ marginBottom: 16 }}>{item.description}</p>}
-      {item.category === "breathing" ? <BreathingGuide item={item} /> : <AudioSession item={item} />}
+      <PlayerBody item={item} />
     </Card>
   );
+}
+
+function PlayerBody({ item }: { item: Content }) {
+  if (item.category === "breathing") return <BreathingGuide item={item} />;
+  const builtin = builtinName(item.media_url);
+  if (builtin && isSound(builtin)) return <SoundPlayer item={item} name={builtin} />;
+  if (builtin && MEDITATIONS[builtin]) return <GuidedMeditation item={item} steps={MEDITATIONS[builtin]} />;
+  return <AudioSession item={item} />;
 }
 
 function ContentCard({ item, onOpen }: { item: Content; onOpen: () => void }) {

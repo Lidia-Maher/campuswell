@@ -5,9 +5,21 @@ import { type FormEvent, useState } from "react";
 import { api, type Schemas, unwrap } from "../../api/client";
 import { messageFor } from "../../api/errors";
 import { Alert, Button, Card, ErrorAlert, Field, Loading, Switch, TextArea } from "../../components/ui";
+import { MEDITATION_NAMES } from "../../lib/meditations";
+import { builtinName, builtinUrl, SOUNDS } from "../../lib/soundscapes";
 
 type Category = Schemas["ContentCreate"]["category"];
 const CATEGORY_LABEL: Record<Category, string> = { meditation: "Meditation", breathing: "Breathing", sleep_sounds: "Sleep sounds" };
+
+// what the app can play without an audio file, per category
+const BUILTIN: Record<Category, Record<string, string>> = { meditation: MEDITATION_NAMES, sleep_sounds: SOUNDS, breathing: {} };
+const LINK = "link";
+
+function audioLabel(url: string | null | undefined) {
+  const name = builtinName(url);
+  if (name) return `Built-in: ${MEDITATION_NAMES[name] ?? SOUNDS[name as keyof typeof SOUNDS] ?? name}`;
+  return url?.includes("campuswell.example") ? null : "Audio linked";
+}
 
 function AddContent({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
@@ -16,14 +28,20 @@ function AddContent({ onDone }: { onDone: () => void }) {
   const [description, setDescription] = useState("");
   const [minutes, setMinutes] = useState("5");
   const [mediaUrl, setMediaUrl] = useState("");
+  const [source, setSource] = useState(Object.keys(BUILTIN.meditation)[0]);
   const [pattern, setPattern] = useState({ inhale: "4", hold: "4", exhale: "4" });
   const breathing = category === "breathing";
+
+  function changeCategory(next: Category) {
+    setCategory(next);
+    setSource(Object.keys(BUILTIN[next])[0] ?? LINK);
+  }
   const create = useMutation({
     mutationFn: () => unwrap(api.POST("/api/wellness/content", {
       body: {
         category, title: title.trim(), description: description.trim() || null,
         duration_seconds: Math.round(Number(minutes) * 60),
-        media_url: breathing ? null : mediaUrl.trim(),
+        media_url: breathing ? null : source === LINK ? mediaUrl.trim() : builtinUrl(source),
         inhale_seconds: breathing ? Number(pattern.inhale) : null,
         hold_seconds: breathing ? Number(pattern.hold) : null,
         exhale_seconds: breathing ? Number(pattern.exhale) : null,
@@ -39,7 +57,7 @@ function AddContent({ onDone }: { onDone: () => void }) {
         <div className="grid grid-half" style={{ gap: 14 }}>
           <div className="field">
             <label htmlFor="c-category">Category</label>
-            <select id="c-category" value={category} onChange={(e) => setCategory(e.target.value as Category)}>
+            <select id="c-category" value={category} onChange={(e) => changeCategory(e.target.value as Category)}>
               {Object.entries(CATEGORY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
@@ -52,6 +70,15 @@ function AddContent({ onDone }: { onDone: () => void }) {
               <Field id="c-out" label="Out (s)" type="number" min={1} max={60} value={pattern.exhale} onChange={(e) => setPattern({ ...pattern, exhale: e.target.value })} />
             </div>
           ) : (
+            <div className="field">
+              <label htmlFor="c-source">Audio</label>
+              <select id="c-source" value={source} onChange={(e) => setSource(e.target.value)}>
+                {Object.entries(BUILTIN[category]).map(([v, l]) => <option key={v} value={v}>Built-in: {l}</option>)}
+                <option value={LINK}>Link to an audio file…</option>
+              </select>
+            </div>
+          )}
+          {!breathing && source === LINK && (
             <Field id="c-media" label="Audio URL" type="url" value={mediaUrl} placeholder="https://…" onChange={(e) => setMediaUrl(e.target.value)}
                    hint="A direct link to an .mp3 file." />
           )}
@@ -100,7 +127,7 @@ export function ContentPage() {
                   <td className="num">{Math.round(c.duration_seconds / 60)} min</td>
                   <td className="small">
                     {c.category === "breathing" ? `${c.inhale_seconds}-${c.hold_seconds ?? 0}-${c.exhale_seconds}` :
-                      c.media_url?.includes("campuswell.example") ? <span className="badge badge-warning">Placeholder audio</span> : "Audio linked"}
+                      audioLabel(c.media_url) ?? <span className="badge badge-warning">Placeholder audio</span>}
                   </td>
                   <td>
                     <Switch id={`active-${c.content_id}`} label={`Show ${c.title} to students`} checked={c.is_active}

@@ -120,18 +120,26 @@ def mood_effect(day: date, today: date) -> float:
     return effect
 
 
+# Old seeds pointed at this made-up host; seed_content() swaps those links for the built-in audio.
+PLACEHOLDER_MEDIA = "https://media.campuswell.example"
+
+
 def wellness_library(created_by: int | None = None) -> list[WellnessContent]:
-    media = "https://media.campuswell.example"  # placeholder until real files are chosen
+    # "builtin:<name>" is played by the website itself (frontend/src/lib/soundscapes.ts and
+    # meditations.ts): sounds are generated in the browser, meditations are read aloud.
     return [
         WellnessContent(category="meditation", title="Body scan for sleep", duration_seconds=600,
                         description="Relax each part of the body before bed.",
-                        media_url=f"{media}/meditation/body-scan.mp3", created_by=created_by),
+                        media_url="builtin:body-scan", created_by=created_by),
         WellnessContent(category="meditation", title="5-minute exam calm", duration_seconds=300,
                         description="A short reset before an exam or presentation.",
-                        media_url=f"{media}/meditation/exam-calm.mp3", created_by=created_by),
+                        media_url="builtin:exam-calm", created_by=created_by),
         WellnessContent(category="meditation", title="Mindful study break", duration_seconds=420,
                         description="Clear your mind between study sessions.",
-                        media_url=f"{media}/meditation/study-break.mp3", created_by=created_by),
+                        media_url="builtin:study-break", created_by=created_by),
+        WellnessContent(category="meditation", title="5-4-3-2-1 grounding", duration_seconds=240,
+                        description="Use your five senses to calm down when anxiety feels overwhelming.",
+                        media_url="builtin:grounding", created_by=created_by),
         WellnessContent(category="breathing", title="Box breathing", duration_seconds=240,
                         description="Inhale, hold, exhale and hold for 4 seconds each.",
                         inhale_seconds=4, hold_seconds=4, exhale_seconds=4, created_by=created_by),
@@ -142,22 +150,42 @@ def wellness_library(created_by: int | None = None) -> list[WellnessContent]:
                         description="Even, slow breaths with no hold.",
                         inhale_seconds=5, hold_seconds=0, exhale_seconds=5, created_by=created_by),
         WellnessContent(category="sleep_sounds", title="Rain on the window", duration_seconds=1800,
-                        media_url=f"{media}/sleep/rain.mp3", created_by=created_by),
+                        description="Steady rain with soft drops on the glass.",
+                        media_url="builtin:rain", created_by=created_by),
         WellnessContent(category="sleep_sounds", title="Ocean waves", duration_seconds=1800,
-                        media_url=f"{media}/sleep/ocean.mp3", created_by=created_by),
+                        description="Slow waves rolling onto the shore.",
+                        media_url="builtin:ocean", created_by=created_by),
+        WellnessContent(category="sleep_sounds", title="Night wind", duration_seconds=1800,
+                        description="A gentle wind that rises and falls.",
+                        media_url="builtin:wind", created_by=created_by),
+        WellnessContent(category="sleep_sounds", title="Crackling fireplace", duration_seconds=1800,
+                        description="A warm fire with quiet crackles.",
+                        media_url="builtin:fireplace", created_by=created_by),
+        WellnessContent(category="sleep_sounds", title="Soft brown noise", duration_seconds=2700,
+                        description="A deep, even hum that masks noise. Good for sleep or focus.",
+                        media_url="builtin:brown-noise", created_by=created_by),
     ]
 
 
 def seed_content(db: Session) -> dict[str, int]:
     """Only the wellness library and the suggestion tips, no users. Safe for production and
-    safe to run again: items that already exist (same title / message) are skipped."""
-    titles = set(db.scalars(select(WellnessContent.title)))
+    safe to run again: items that already exist (same title / message) are skipped, except
+    that library items still on a placeholder link get their built-in audio."""
+    existing = {c.title: c for c in db.scalars(select(WellnessContent))}
     messages = set(db.scalars(select(SuggestionTemplate.message)))
-    content = [c for c in wellness_library() if c.title not in titles]
+    content, updated = [], 0
+    for item in wellness_library():
+        old = existing.get(item.title)
+        if old is None:
+            content.append(item)
+        elif old.media_url and old.media_url.startswith(PLACEHOLDER_MEDIA):
+            old.media_url = item.media_url
+            old.description = old.description or item.description
+            updated += 1
     templates = [SuggestionTemplate(category=c, message=m) for c, m in SUGGESTIONS if m not in messages]
     db.add_all(content + templates)
     db.commit()
-    return {"wellness_content": len(content), "suggestion_templates": len(templates)}
+    return {"wellness_content": len(content), "media_updated": updated, "suggestion_templates": len(templates)}
 
 
 # Every time column that belongs to a demo user's data: (table, owner column, time columns).

@@ -9,8 +9,8 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.main import app
 from app.make_admin import set_role
-from app.models import User
-from app.seed import seed_content
+from app.models import User, WellnessContent
+from app.seed import PLACEHOLDER_MEDIA, seed_content
 
 REGISTRATION = {"name": "Lina", "department": "computing", "consent": True}
 
@@ -72,5 +72,20 @@ def test_content_seed_is_repeatable_and_adds_no_users():
         second = seed_content(db)
         users = db.scalar(select(func.count()).select_from(User))
     assert first["wellness_content"] > 0 and first["suggestion_templates"] > 0
-    assert second == {"wellness_content": 0, "suggestion_templates": 0}
+    assert second == {"wellness_content": 0, "media_updated": 0, "suggestion_templates": 0}
     assert users == 0
+
+
+def test_content_seed_replaces_placeholder_audio():
+    with SessionLocal() as db:
+        db.add(WellnessContent(category="sleep_sounds", title="Ocean waves", duration_seconds=1800,
+                               media_url=f"{PLACEHOLDER_MEDIA}/sleep/ocean.mp3"))
+        db.add(WellnessContent(category="sleep_sounds", title="Rain on the window", duration_seconds=1800,
+                               media_url="https://cdn.example.org/our-own-rain.mp3"))
+        db.commit()
+        counts = seed_content(db)
+        urls = dict(db.execute(select(WellnessContent.title, WellnessContent.media_url)).all())
+    assert counts["media_updated"] == 1
+    assert urls["Ocean waves"] == "builtin:ocean"
+    assert urls["Rain on the window"] == "https://cdn.example.org/our-own-rain.mp3"  # a real link is kept
+    assert urls["Night wind"] == "builtin:wind"

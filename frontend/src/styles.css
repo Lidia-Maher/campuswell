@@ -207,7 +207,15 @@ th { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .progress { height: 8px; background: #edf1f6; border-radius: 999px; overflow: hidden; }
-.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.5s linear; }
+
+/* Well-Being players */
+.sound-orb { width: 140px; height: 140px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+  background: radial-gradient(circle at 35% 30%, #8a7fd1, #3d3a7a); opacity: 0.85; }
+.sound-orb.playing { animation: orb-breathe 7s ease-in-out infinite; }
+@keyframes orb-breathe { 0%, 100% { transform: scale(0.92); } 50% { transform: scale(1.06); } }
+.meditation-step { background: #f1eefa; border-radius: 14px; padding: 22px 24px; min-height: 140px; display: flex; flex-direction: column; gap: 8px; }
+.meditation-text { font-size: 1.2rem; line-height: 1.55; color: #1f2937; max-width: 60ch; }
 
 .chart-box { position: relative; height: 260px; }
 .chart-box.tall { height: 300px; }
